@@ -428,8 +428,16 @@ async function initPlayer(){
   player.addListener('account_error', ({ message }) => {
     document.getElementById('feedback').textContent = 'Hinweis: Wiedergabe erfordert Spotify Premium.';
   });
+  player.addListener('playback_error', ({ message }) => {
+    console.error('Playback error:', message);
+    document.getElementById('feedback').textContent = 'Wiedergabefehler: ' + message;
+  });
+  player.addListener('not_ready', ({ device_id }) => {
+    console.warn('Device ist offline:', device_id);
+  });
 
-  await player.connect();
+  const connected = await player.connect();
+  console.log('Player connected:', connected);
 }
 
 /* ======================= TOP TRACKS ======================= */
@@ -496,13 +504,18 @@ function updateLenDisplay(){
 }
 
 async function playSnippet(){
-  if(!deviceId || !currentTrack) return;
+  if(!currentTrack) return;
+  if(!deviceId){
+    console.warn('Kein deviceId vorhanden – Player noch nicht bereit.');
+    document.getElementById('feedback').textContent = 'Player ist noch nicht bereit, kurz warten und nochmal klicken.';
+    return;
+  }
   const token = await getValidToken();
   const ms = SNIPPET_LENGTHS[snippetIndex];
 
   document.getElementById('playBtn').disabled = true;
 
-  await fetch('https://api.spotify.com/v1/me/player/play?device_id=' + deviceId, {
+  const res = await fetch('https://api.spotify.com/v1/me/player/play?device_id=' + deviceId, {
     method: 'PUT',
     headers: {
       Authorization: 'Bearer ' + token,
@@ -510,6 +523,15 @@ async function playSnippet(){
     },
     body: JSON.stringify({ uris: [currentTrack.uri], position_ms: 0 })
   });
+
+  if(!res.ok){
+    const errBody = await res.text();
+    console.error('Play-Request fehlgeschlagen:', res.status, errBody);
+    document.getElementById('feedback').textContent = 'Fehler beim Abspielen (Status ' + res.status + '). Details in der Konsole.';
+    document.getElementById('playBtn').disabled = false;
+    return;
+  }
+  console.log('Play-Request erfolgreich gesendet.');
 
   clearTimeout(playbackTimer);
   playbackTimer = setTimeout(async () => {
